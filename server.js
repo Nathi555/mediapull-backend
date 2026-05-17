@@ -128,9 +128,9 @@ app.post('/api/download', async (req, res) => {
     args = `-x --audio-format ${audioFormat} --audio-quality 0 --extractor-args "youtube:player_client=ios,web" --js-runtimes node ${cookies} -o "${outFile}" --no-playlist "${url}"`;
   } else {
     const fmt = videoQuality === 'max'
-      ? 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best'
-      : `bestvideo[height<=${videoQuality}][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=${videoQuality}]+bestaudio/best[height<=${videoQuality}]`;
-    args = `-f "${fmt}" --merge-output-format mp4 --extractor-args "youtube:player_client=ios,web" --js-runtimes node ${cookies} -o "${outFile}" --no-playlist "${url}"`;
+      ? 'bestvideo+bestaudio/best'
+      : `bestvideo[height<=${videoQuality}]+bestaudio/best[height<=${videoQuality}]/best`;
+    args = `-f "${fmt}" --merge-output-format mp4 --remux-video mp4 --extractor-args "youtube:player_client=ios,web" --js-runtimes node ${cookies} --print "%(height)sp %(format_id)s" -o "${outFile}" --no-playlist "${url}"`;
   }
 
   console.log('[cmd] yt-dlp', args.slice(0, 120));
@@ -138,18 +138,20 @@ app.post('/api/download', async (req, res) => {
   exec(`${ytdlp} ${args}`, { timeout: 5 * 60 * 1000 }, async (err, _stdout, stderr) => {
     const blocked = err && stderr && (
       stderr.includes('Sign in to confirm') ||
-      stderr.includes('cookies are no longer valid') ||
-      stderr.includes('bot')
+      stderr.includes('cookies are no longer valid')
     );
 
     if (blocked) {
-      console.log('[blocked] YouTube blockt — versuche Invidious-Fallback');
-      const videoId = extractVideoId(url);
-      if (videoId) {
-        const ok = await invidiousStream(videoId, isAudio, res);
-        if (ok) return;
+      console.log('[blocked] YouTube blockt — Cookies abgelaufen oder ungültig');
+      // Invidious nur für Audio-Fallback, nicht für Video (zu schlechte Qualität)
+      if (isAudio) {
+        const videoId = extractVideoId(url);
+        if (videoId) {
+          const ok = await invidiousStream(videoId, true, res);
+          if (ok) return;
+        }
       }
-      return res.status(500).json({ status:'error', message:'YouTube blockt den Server. Bitte Cookies neu exportieren oder später versuchen.' });
+      return res.status(500).json({ status:'error', message:'YouTube blockt den Server. Bitte Cookies in Railway neu exportieren.' });
     }
 
     if (err) {
