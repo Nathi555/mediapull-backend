@@ -11,6 +11,16 @@ const TTL_MS   = 30 * 60 * 1000;
 
 if (!fs.existsSync(TEMP_DIR)) fs.mkdirSync(TEMP_DIR, { recursive: true });
 
+// Cookies aus Env-Variable in Datei schreiben
+const COOKIES_FILE = path.join(__dirname, 'cookies.txt');
+if (process.env.YOUTUBE_COOKIES) {
+  fs.writeFileSync(COOKIES_FILE, process.env.YOUTUBE_COOKIES, 'utf8');
+  console.log('[cookies] cookies.txt geschrieben');
+}
+function cookiesArg() {
+  return fs.existsSync(COOKIES_FILE) ? `--cookies "${COOKIES_FILE}"` : '';
+}
+
 const app = express();
 app.use(cors({ origin: '*', methods: ['GET','POST','OPTIONS'] }));
 app.use(express.json());
@@ -33,10 +43,10 @@ app.post('/api/download', (req, res) => {
 
   let fmt, args;
   if (isAudio) {
-    args = `-x --audio-format ${audioFormat} --audio-quality 0 --extractor-args "youtube:player_client=ios,web" --js-runtimes nodejs -o "${outFile}" --no-playlist "${url}"`;
+    args = `-x --audio-format ${audioFormat} --audio-quality 0 --extractor-args "youtube:player_client=ios,web" --js-runtimes nodejs ${cookiesArg()} -o "${outFile}" --no-playlist "${url}"`;
   } else {
     fmt = `bestvideo[height<=${videoQuality}][ext=mp4]+bestaudio[ext=m4a]/best[height<=${videoQuality}][ext=mp4]/best[height<=${videoQuality}]`;
-    args = `-f "${fmt}" --merge-output-format mp4 --extractor-args "youtube:player_client=ios,web" --js-runtimes nodejs -o "${outFile}" --no-playlist "${url}"`;
+    args = `-f "${fmt}" --merge-output-format mp4 --extractor-args "youtube:player_client=ios,web" --js-runtimes nodejs ${cookiesArg()} -o "${outFile}" --no-playlist "${url}"`;
   }
 
   const ytdlp = process.env.YTDLP_PATH || 'yt-dlp';
