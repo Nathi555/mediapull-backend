@@ -6,16 +6,12 @@ RUN apt-get update && apt-get install -y \
     ln -sf /usr/bin/python3 /usr/bin/python && \
     rm -rf /var/lib/apt/lists/*
 
-# Prüfe ffmpeg
-RUN ffmpeg -version | head -1
-
 RUN curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp \
     -o /usr/local/bin/yt-dlp && chmod a+rx /usr/local/bin/yt-dlp
 
-# yt-dlp Config
-RUN mkdir -p /root/.config/yt-dlp && printf \
-    '--js-runtimes node:/usr/local/bin/node\n--extractor-args youtube:player_client=tv_embedded,ios,web\n' \
-    > /root/.config/yt-dlp/config
+RUN mkdir -p /root/.config/yt-dlp && \
+    echo '--js-runtimes node:/usr/local/bin/node' > /root/.config/yt-dlp/config && \
+    echo '--extractor-args youtube:player_client=tv_embedded,ios,web' >> /root/.config/yt-dlp/config
 
 WORKDIR /app
 COPY package.json ./
