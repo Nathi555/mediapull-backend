@@ -127,12 +127,12 @@ app.post('/api/download', async (req, res) => {
 
   let args;
   if (isAudio) {
-    args = `-x --audio-format ${audioFormat} --audio-quality 0 --extractor-args "youtube:player_client=tv_embedded,ios,web" --js-runtimes node ${cookies} -o "${outFile}" --no-playlist "${url}"`;
+    args = `-x --audio-format ${audioFormat} --audio-quality 0 --extractor-args "youtube:player_client=web,tv_embedded,ios" --js-runtimes nodejs ${cookies} -o "${outFile}" --no-playlist "${url}"`;
   } else {
     const fmt = videoQuality === 'max'
       ? 'bestvideo*+bestaudio/b'
       : `bestvideo*[height<=${videoQuality}]+bestaudio/bestvideo[height<=${videoQuality}]+bestaudio/b[height<=${videoQuality}]`;
-    args = `-f "${fmt}" --merge-output-format mp4 --extractor-args "youtube:player_client=tv_embedded,ios,web" --js-runtimes node ${cookies} -o "${outFile}" --no-playlist "${url}"`;
+    args = `-f "${fmt}" --merge-output-format mp4 --extractor-args "youtube:player_client=web,tv_embedded,ios" --js-runtimes nodejs ${cookies} -o "${outFile}" --no-playlist "${url}"`;
   }
 
   console.log('[cmd] yt-dlp', args.slice(0, 120));

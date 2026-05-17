@@ -9,9 +9,10 @@ RUN apt-get update && apt-get install -y \
 RUN curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp \
     -o /usr/local/bin/yt-dlp && chmod a+rx /usr/local/bin/yt-dlp
 
-RUN mkdir -p /root/.config/yt-dlp && \
-    echo '--js-runtimes node:/usr/local/bin/node' > /root/.config/yt-dlp/config && \
-    echo '--extractor-args youtube:player_client=tv_embedded,ios,web' >> /root/.config/yt-dlp/config
+# Node.js Pfad für yt-dlp als JS-Runtime registrieren
+RUN node_path=$(which node) && \
+    mkdir -p /root/.config/yt-dlp && \
+    echo "--js-runtimes nodejs:${node_path}" > /root/.config/yt-dlp/config
 
 WORKDIR /app
 COPY package.json ./
