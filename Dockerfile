@@ -9,10 +9,10 @@ RUN apt-get update && apt-get install -y \
 RUN curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp \
     -o /usr/local/bin/yt-dlp && chmod a+rx /usr/local/bin/yt-dlp
 
-# yt-dlp: Node.js als JS-Runtime (für PO-Token Generierung)
+# WICHTIG: "node" nicht "nodejs" — das ist der korrekte Runtime-Name für yt-dlp
 RUN mkdir -p /root/.config/yt-dlp && \
-    echo "--js-runtimes nodejs:$(which node)" > /root/.config/yt-dlp/config && \
-    cat /root/.config/yt-dlp/config
+    echo "--js-runtimes node:$(which node)" > /root/.config/yt-dlp/config && \
+    echo "yt-dlp config:" && cat /root/.config/yt-dlp/config
 
 WORKDIR /app
 COPY package.json ./
