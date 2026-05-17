@@ -132,7 +132,7 @@ app.post('/api/download', async (req, res) => {
     const fmt = videoQuality === 'max'
       ? 'bestvideo+bestaudio/best'
       : `bestvideo[height<=${videoQuality}]+bestaudio/best[height<=${videoQuality}]/best`;
-    args = `-f "${fmt}" --merge-output-format mp4 --remux-video mp4 --extractor-args "youtube:player_client=tv_embedded,ios,web" --js-runtimes node ${cookies} --print "%(height)sp %(format_id)s" -o "${outFile}" --no-playlist "${url}"`;
+    args = `-f "${fmt}" --merge-output-format mp4 --extractor-args "youtube:player_client=tv_embedded,ios,web" --js-runtimes node ${cookies} -o "${outFile}" --no-playlist "${url}"`;
   }
 
   console.log('[cmd] yt-dlp', args.slice(0, 120));
@@ -161,17 +161,19 @@ app.post('/api/download', async (req, res) => {
       return res.status(500).json({ status:'error', message:'Download fehlgeschlagen', detail:(stderr||'').slice(-300) });
     }
 
-    // Datei finden
+    // Datei finden — nach ID-Prefix oder neuester Datei (letzte 90s)
     let finalFile = outFile;
     if (!fs.existsSync(finalFile)) {
+      const now = Date.now();
       const found = fs.readdirSync(TEMP_DIR)
-        .filter(f => f.startsWith(id))
-        .map(f => path.join(TEMP_DIR, f))
-        .sort((a,b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs)[0];
-      if (found) finalFile = found;
+        .map(f => ({ f, fp: path.join(TEMP_DIR, f), st: fs.statSync(path.join(TEMP_DIR, f)) }))
+        .filter(x => x.st.isFile() && (x.f.startsWith(id) || (now - x.st.mtimeMs) < 90000))
+        .sort((a,b) => b.st.mtimeMs - a.st.mtimeMs)[0];
+      if (found) finalFile = found.fp;
     }
+    console.log('[file]', finalFile, fs.existsSync(finalFile) ? 'gefunden' : 'FEHLT');
     if (!finalFile || !fs.existsSync(finalFile)) {
-      return res.status(500).json({ status:'error', message:'Datei nicht gefunden' });
+      return res.status(500).json({ status:'error', message:'Datei nicht gefunden nach Download' });
     }
 
     const realExt = path.extname(finalFile).slice(1) || ext;
