@@ -1,10 +1,11 @@
-const express  = require('express');
-const cors     = require('cors');
-const { exec } = require('child_process');
-const path     = require('path');
-const fs       = require('fs');
-const https    = require('https');
-const http     = require('http');
+const express   = require('express');
+const cors      = require('cors');
+const { exec }  = require('child_process');
+const { spawn } = require('child_process');
+const path      = require('path');
+const fs        = require('fs');
+const https     = require('https');
+const http      = require('http');
 const { v4: uuidv4 } = require('uuid');
 
 const PORT     = process.env.PORT || 3000;
@@ -13,30 +14,19 @@ const TTL_MS   = 30 * 60 * 1000;
 
 if (!fs.existsSync(TEMP_DIR)) fs.mkdirSync(TEMP_DIR, { recursive: true });
 
-const COOKIES_FILE = path.join(__dirname, 'cookies.txt');
-if (process.env.YOUTUBE_COOKIES) {
-  // \r\n -> \n normalisieren (Railway kodiert manchmal anders)
-  const cookieData = process.env.YOUTUBE_COOKIES.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-  fs.writeFileSync(COOKIES_FILE, cookieData, 'utf8');
-  console.log('[cookies] geladen (' + cookieData.length + ' Zeichen, ' + cookieData.split('\n').length + ' Zeilen)');
-}
-
 const app = express();
 app.use(cors({ origin: '*', methods: ['GET','POST','OPTIONS'] }));
 app.use(express.json());
 
-app.get('/health', (_req, res) => res.json({
-  ok: true,
-  cookies: fs.existsSync(COOKIES_FILE) ? 'geladen' : 'fehlen',
-  ytdlp: require('child_process').execSync('yt-dlp --version').toString().trim()
-}));
+app.get('/health', (_req, res) => res.json({ ok: true, method: 'piped+ytdlp' }));
 
-// ── Invidious: direkter Stream ────────────────────────────
-const INVIDIOUS = [
-  'https://inv.nadeko.net',
-  'https://invidious.nerdvpn.de',
-  'https://invidious.io',
-  'https://iv.ggtyler.dev',
+// ── Piped API Instanzen ───────────────────────────────────
+const PIPED = [
+  'https://pipedapi.kavin.rocks',
+  'https://pipedapi.tokhmi.xyz',
+  'https://pipedapi.moomoo.me',
+  'https://piped-api.privacy.com.de',
+  'https://api.piped.projectsegfau.lt',
 ];
 
 function extractVideoId(url) {
@@ -44,152 +34,183 @@ function extractVideoId(url) {
   return m ? m[1] : null;
 }
 
-function fetchJson(url) {
+function get(url) {
   return new Promise((resolve, reject) => {
     const client = url.startsWith('https') ? https : http;
-    const req = client.get(url, { headers:{'User-Agent':'mediapull/1.0'}, timeout:8000 }, res => {
-      let data = '';
-      res.on('data', d => data += d);
-      res.on('end', () => { try { resolve(JSON.parse(data)); } catch(e) { reject(e); } });
+    const req = client.get(url, { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 10000 }, res => {
+      let d = '';
+      res.on('data', c => d += c);
+      res.on('end', () => { try { resolve(JSON.parse(d)); } catch(e) { reject(e); } });
     });
     req.on('error', reject);
     req.on('timeout', () => { req.destroy(); reject(new Error('timeout')); });
   });
 }
 
-async function invidiousStream(videoId, isAudio, res) {
-  for (const base of INVIDIOUS) {
+async function getPipedStreams(videoId, quality, isAudio) {
+  for (const base of PIPED) {
     try {
-      console.log('[invidious] versuche', base);
-      const data = await fetchJson(`${base}/api/v1/videos/${videoId}?fields=adaptiveFormats,formatStreams,title`);
-      if (!data) continue;
+      console.log('[piped] versuche', base);
+      const data = await get(`${base}/streams/${videoId}`);
+      if (!data || !data.videoStreams) continue;
 
-      let streamUrl = null;
-      let mime = 'video/mp4';
+      // Audio: besten Stream wählen
+      const audioStream = (data.audioStreams || [])
+        .filter(s => s.mimeType && s.mimeType.includes('audio'))
+        .sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0))[0];
 
       if (isAudio) {
-        const audio = (data.adaptiveFormats || [])
-          .filter(f => f.type && f.type.includes('audio'))
-          .sort((a,b) => (b.bitrate||0) - (a.bitrate||0))[0];
-        if (audio?.url) { streamUrl = audio.url; mime = 'audio/webm'; }
-      } else {
-        const video = (data.formatStreams || [])
-          .sort((a,b) => (parseInt(b.resolution)||0) - (parseInt(a.resolution)||0))[0];
-        if (video?.url) { streamUrl = video.url; mime = 'video/mp4'; }
+        if (audioStream) return { audio: audioStream.url, title: data.title };
+        continue;
       }
 
-      if (!streamUrl) continue;
+      // Video: passende Qualität wählen
+      const maxHeight = quality === 'max' ? 9999 : parseInt(quality);
+      const videoStream = (data.videoStreams || [])
+        .filter(s => s.videoOnly && s.quality && parseInt(s.quality) <= maxHeight)
+        .sort((a, b) => parseInt(b.quality) - parseInt(a.quality))[0]
+        || (data.videoStreams || [])
+        .filter(s => !s.videoOnly)
+        .sort((a, b) => parseInt(b.quality) - parseInt(a.quality))[0];
 
-      console.log('[invidious] stream URL gefunden, pipe startet...');
-      const client2 = streamUrl.startsWith('https') ? https : http;
-      const ext     = isAudio ? 'webm' : 'mp4';
-      const fname   = `download.${ext}`;
-
-      res.setHeader('Content-Type', mime);
-      res.setHeader('Content-Disposition', `attachment; filename="${fname}"`);
-      res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition');
-
-      client2.get(streamUrl, { headers:{'User-Agent':'mediapull/1.0'} }, stream => {
-        if (stream.headers['content-length']) {
-          res.setHeader('Content-Length', stream.headers['content-length']);
-        }
-        stream.pipe(res);
-        stream.on('error', e => {
-          console.error('[stream pipe]', e);
-          if (!res.headersSent) res.status(500).json({status:'error',message:'Stream-Fehler'});
-        });
-      }).on('error', e => {
-        console.error('[invidious pipe]', e);
-        if (!res.headersSent) res.status(500).json({status:'error',message:'Stream-Verbindungsfehler'});
-      });
-      return true;
+      if (videoStream && audioStream) {
+        console.log(`[piped] Video: ${videoStream.quality}, Audio: ${audioStream.bitrate}bps`);
+        return { video: videoStream.url, audio: audioStream.url, title: data.title, quality: videoStream.quality };
+      }
     } catch(e) {
-      console.log('[invidious] ' + base + ' fehlgeschlagen:', e.message);
+      console.log('[piped]', base, 'fehler:', e.message);
     }
   }
-  return false;
+  return null;
+}
+
+function downloadFile(url, dest) {
+  return new Promise((resolve, reject) => {
+    const file = fs.createWriteStream(dest);
+    const client = url.startsWith('https') ? https : http;
+    const req = client.get(url, { headers: { 'User-Agent': 'Mozilla/5.0' } }, res => {
+      if (res.statusCode === 302 || res.statusCode === 301) {
+        file.close();
+        return downloadFile(res.headers.location, dest).then(resolve).catch(reject);
+      }
+      res.pipe(file);
+      file.on('finish', () => file.close(resolve));
+    });
+    req.on('error', e => { fs.unlink(dest, () => {}); reject(e); });
+    req.setTimeout(120000, () => { req.destroy(); reject(new Error('Download timeout')); });
+  });
+}
+
+function mergeWithFfmpeg(videoFile, audioFile, outFile) {
+  return new Promise((resolve, reject) => {
+    const args = [
+      '-i', videoFile,
+      '-i', audioFile,
+      '-c:v', 'copy',
+      '-c:a', 'aac',
+      '-strict', 'experimental',
+      '-y', outFile
+    ];
+    console.log('[ffmpeg] merge startet');
+    const ff = spawn('ffmpeg', args);
+    ff.on('close', code => {
+      if (code === 0) resolve();
+      else reject(new Error(`ffmpeg exit ${code}`));
+    });
+    ff.on('error', reject);
+  });
+}
+
+function convertToMp3(inputFile, outFile) {
+  return new Promise((resolve, reject) => {
+    const args = ['-i', inputFile, '-vn', '-ab', '192k', '-ar', '44100', '-y', outFile];
+    const ff = spawn('ffmpeg', args);
+    ff.on('close', code => { if (code === 0) resolve(); else reject(new Error(`ffmpeg exit ${code}`)); });
+    ff.on('error', reject);
+  });
 }
 
 // ── POST /api/download ────────────────────────────────────
 app.post('/api/download', async (req, res) => {
-  const { url, downloadMode='auto', videoQuality='1080', audioFormat='mp3' } = req.body;
+  const { url, downloadMode = 'auto', videoQuality = 'max', audioFormat = 'mp3' } = req.body;
 
   if (!url || !/^https?:\/\//i.test(url)) {
-    return res.status(400).json({ status:'error', message:'Ungültige URL' });
+    return res.status(400).json({ status: 'error', message: 'Ungültige URL' });
   }
 
-  const isAudio = downloadMode === 'audio';
-  const ext     = isAudio ? audioFormat : 'mp4';
-  const id      = uuidv4();
-  const outFile = path.join(TEMP_DIR, `${id}.${ext}`);
-  const cookies = fs.existsSync(COOKIES_FILE) ? `--cookies "${COOKIES_FILE}"` : '';
-  const ytdlp   = process.env.YTDLP_PATH || 'yt-dlp';
+  const isAudio  = downloadMode === 'audio';
+  const id       = uuidv4();
+  const videoId  = extractVideoId(url);
 
-  let args;
-  if (isAudio) {
-    args = `-x --audio-format ${audioFormat} --audio-quality 0 --extractor-args "youtube:player_client=android,web,tv_embedded" --js-runtimes node ${cookies} -o "${outFile}" --no-playlist "${url}"`;
-  } else {
-    const fmt = videoQuality === 'max'
-      ? 'bestvideo*+bestaudio/b'
-      : `bestvideo*[height<=${videoQuality}]+bestaudio/bestvideo[height<=${videoQuality}]+bestaudio/b[height<=${videoQuality}]`;
-    args = `-f "${fmt}" --merge-output-format mp4 --extractor-args "youtube:player_client=android,web,tv_embedded" --js-runtimes node ${cookies} -o "${outFile}" --no-playlist "${url}"`;
+  if (!videoId) {
+    return res.status(400).json({ status: 'error', message: 'Keine gültige YouTube-URL' });
   }
 
-  console.log('[cmd] yt-dlp', args.slice(0, 120));
+  console.log(`[request] videoId=${videoId} mode=${downloadMode} quality=${videoQuality}`);
 
-  exec(`${ytdlp} ${args}`, { timeout: 5 * 60 * 1000 }, async (err, _stdout, stderr) => {
-    const blocked = err && stderr && (
-      stderr.includes('Sign in to confirm') ||
-      stderr.includes('cookies are no longer valid')
-    );
+  try {
+    const streams = await getPipedStreams(videoId, videoQuality, isAudio);
 
-    if (blocked) {
-      console.log('[blocked] YouTube blockt — Cookies abgelaufen oder ungültig');
-      // Invidious nur für Audio-Fallback, nicht für Video (zu schlechte Qualität)
-      if (isAudio) {
-        const videoId = extractVideoId(url);
-        if (videoId) {
-          const ok = await invidiousStream(videoId, true, res);
-          if (ok) return;
-        }
-      }
-      return res.status(500).json({ status:'error', message:'YouTube blockt den Server. Bitte Cookies in Railway neu exportieren.' });
+    if (!streams) {
+      return res.status(500).json({ status: 'error', message: 'Kein Stream gefunden. Bitte später erneut versuchen.' });
     }
 
-    if (err) {
-      console.error('[err]', (stderr||'').slice(-300));
-      return res.status(500).json({ status:'error', message:'Download fehlgeschlagen', detail:(stderr||'').slice(-300) });
+    if (isAudio) {
+      // Audio direkt herunterladen + zu MP3 konvertieren
+      const rawAudio = path.join(TEMP_DIR, `${id}_audio_raw`);
+      const mp3File  = path.join(TEMP_DIR, `${id}.mp3`);
+      console.log('[audio] lade herunter...');
+      await downloadFile(streams.audio, rawAudio);
+      console.log('[audio] konvertiere zu MP3...');
+      await convertToMp3(rawAudio, mp3File);
+      fs.unlink(rawAudio, () => {});
+      streamToClient(res, mp3File, 'audio/mpeg', 'download.mp3');
+    } else {
+      // Video + Audio herunterladen und mergen
+      const videoFile = path.join(TEMP_DIR, `${id}_video`);
+      const audioFile = path.join(TEMP_DIR, `${id}_audio`);
+      const outFile   = path.join(TEMP_DIR, `${id}.mp4`);
+      console.log(`[video] lade Video (${streams.quality}) und Audio herunter...`);
+      await Promise.all([
+        downloadFile(streams.video, videoFile),
+        downloadFile(streams.audio, audioFile),
+      ]);
+      console.log('[video] merge mit ffmpeg...');
+      await mergeWithFfmpeg(videoFile, audioFile, outFile);
+      fs.unlink(videoFile, () => {});
+      fs.unlink(audioFile, () => {});
+      streamToClient(res, outFile, 'video/mp4', 'download.mp4');
     }
-
-    // Datei finden — nach ID-Prefix oder neuester Datei (letzte 90s)
-    let finalFile = outFile;
-    if (!fs.existsSync(finalFile)) {
-      const now = Date.now();
-      const found = fs.readdirSync(TEMP_DIR)
-        .map(f => ({ f, fp: path.join(TEMP_DIR, f), st: fs.statSync(path.join(TEMP_DIR, f)) }))
-        .filter(x => x.st.isFile() && (x.f.startsWith(id) || (now - x.st.mtimeMs) < 90000))
-        .sort((a,b) => b.st.mtimeMs - a.st.mtimeMs)[0];
-      if (found) finalFile = found.fp;
+  } catch(e) {
+    console.error('[error]', e.message);
+    if (!res.headersSent) {
+      res.status(500).json({ status: 'error', message: 'Fehler: ' + e.message });
     }
-    console.log('[file]', finalFile, fs.existsSync(finalFile) ? 'gefunden' : 'FEHLT');
-    if (!finalFile || !fs.existsSync(finalFile)) {
-      return res.status(500).json({ status:'error', message:'Datei nicht gefunden nach Download' });
-    }
-
-    const realExt = path.extname(finalFile).slice(1) || ext;
-    const mime    = isAudio ? 'audio/mpeg' : 'video/mp4';
-    res.setHeader('Content-Type', mime);
-    res.setHeader('Content-Disposition', `attachment; filename="download.${realExt}"`);
-    res.setHeader('Content-Length', fs.statSync(finalFile).size);
-    res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition');
-    const stream = fs.createReadStream(finalFile);
-    stream.pipe(res);
-    stream.on('end', () => setTimeout(() => fs.unlink(finalFile, ()=>{}), 5000));
-    stream.on('error', e => { if (!res.headersSent) res.status(500).json({status:'error',message:'Stream-Fehler'}); });
-  });
+  }
 });
 
+function streamToClient(res, filePath, mime, filename) {
+  if (!fs.existsSync(filePath)) {
+    return res.status(500).json({ status: 'error', message: 'Datei nicht gefunden nach Download' });
+  }
+  console.log('[stream]', filename, fs.statSync(filePath).size, 'bytes');
+  res.setHeader('Content-Type', mime);
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.setHeader('Content-Length', fs.statSync(filePath).size);
+  res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition');
+  const stream = fs.createReadStream(filePath);
+  stream.pipe(res);
+  stream.on('end', () => setTimeout(() => fs.unlink(filePath, () => {}), 5000));
+  stream.on('error', () => { if (!res.headersSent) res.status(500).end(); });
+}
+
 // Cleanup
-try { const n=Date.now(); fs.readdirSync(TEMP_DIR).forEach(f=>{const fp=path.join(TEMP_DIR,f);if(n-fs.statSync(fp).mtimeMs>TTL_MS)fs.unlinkSync(fp);}); } catch(e){}
+try {
+  const n = Date.now();
+  fs.readdirSync(TEMP_DIR).forEach(f => {
+    const fp = path.join(TEMP_DIR, f);
+    if (n - fs.statSync(fp).mtimeMs > TTL_MS) fs.unlinkSync(fp);
+  });
+} catch(e) {}
 
 app.listen(PORT, () => console.log(`MediaPull läuft auf Port ${PORT}`));
