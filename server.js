@@ -130,8 +130,8 @@ app.post('/api/download', async (req, res) => {
     args = `-x --audio-format ${audioFormat} --audio-quality 0 --extractor-args "youtube:player_client=tv_embedded,ios,web" --js-runtimes node ${cookies} -o "${outFile}" --no-playlist "${url}"`;
   } else {
     const fmt = videoQuality === 'max'
-      ? 'bestvideo+bestaudio/best'
-      : `bestvideo[height<=${videoQuality}]+bestaudio/best[height<=${videoQuality}]/best`;
+      ? 'bestvideo*+bestaudio/b'
+      : `bestvideo*[height<=${videoQuality}]+bestaudio/bestvideo[height<=${videoQuality}]+bestaudio/b[height<=${videoQuality}]`;
     args = `-f "${fmt}" --merge-output-format mp4 --extractor-args "youtube:player_client=tv_embedded,ios,web" --js-runtimes node ${cookies} -o "${outFile}" --no-playlist "${url}"`;
   }
 
