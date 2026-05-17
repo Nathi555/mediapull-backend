@@ -40,7 +40,10 @@ function get(url) {
     const req = client.get(url, { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 10000 }, res => {
       let d = '';
       res.on('data', c => d += c);
-      res.on('end', () => { try { resolve(JSON.parse(d)); } catch(e) { reject(e); } });
+      res.on('end', () => {
+        console.log('[http] status', res.statusCode, 'body-len', d.length);
+        try { resolve(JSON.parse(d)); } catch(e) { reject(new Error('JSON parse: ' + d.slice(0,100))); }
+      });
     });
     req.on('error', reject);
     req.on('timeout', () => { req.destroy(); reject(new Error('timeout')); });
@@ -52,7 +55,9 @@ async function getPipedStreams(videoId, quality, isAudio) {
     try {
       console.log('[piped] versuche', base);
       const data = await get(`${base}/streams/${videoId}`);
-      if (!data || !data.videoStreams) continue;
+      console.log('[piped] antwort keys:', data ? Object.keys(data).join(',') : 'null');
+      if (!data || !data.videoStreams) { console.log('[piped] keine videoStreams'); continue; }
+      console.log('[piped] videoStreams:', data.videoStreams.length, 'audioStreams:', (data.audioStreams||[]).length);
 
       // Audio: besten Stream wählen
       const audioStream = (data.audioStreams || [])
