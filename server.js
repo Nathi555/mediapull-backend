@@ -33,10 +33,10 @@ app.post('/api/download', (req, res) => {
 
   let fmt, args;
   if (isAudio) {
-    args = `-x --audio-format ${audioFormat} --audio-quality 0 -o "${outFile}" --no-playlist "${url}"`;
+    args = `-x --audio-format ${audioFormat} --audio-quality 0 --extractor-args "youtube:player_client=ios,web" --js-runtimes nodejs -o "${outFile}" --no-playlist "${url}"`;
   } else {
     fmt = `bestvideo[height<=${videoQuality}][ext=mp4]+bestaudio[ext=m4a]/best[height<=${videoQuality}][ext=mp4]/best[height<=${videoQuality}]`;
-    args = `-f "${fmt}" --merge-output-format mp4 -o "${outFile}" --no-playlist "${url}"`;
+    args = `-f "${fmt}" --merge-output-format mp4 --extractor-args "youtube:player_client=ios,web" --js-runtimes nodejs -o "${outFile}" --no-playlist "${url}"`;
   }
 
   const ytdlp = process.env.YTDLP_PATH || 'yt-dlp';
