@@ -15,8 +15,10 @@ if (!fs.existsSync(TEMP_DIR)) fs.mkdirSync(TEMP_DIR, { recursive: true });
 
 const COOKIES_FILE = path.join(__dirname, 'cookies.txt');
 if (process.env.YOUTUBE_COOKIES) {
-  fs.writeFileSync(COOKIES_FILE, process.env.YOUTUBE_COOKIES, 'utf8');
-  console.log('[cookies] geladen (' + process.env.YOUTUBE_COOKIES.length + ' Zeichen)');
+  // \r\n -> \n normalisieren (Railway kodiert manchmal anders)
+  const cookieData = process.env.YOUTUBE_COOKIES.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  fs.writeFileSync(COOKIES_FILE, cookieData, 'utf8');
+  console.log('[cookies] geladen (' + cookieData.length + ' Zeichen, ' + cookieData.split('\n').length + ' Zeilen)');
 }
 
 const app = express();
@@ -125,12 +127,12 @@ app.post('/api/download', async (req, res) => {
 
   let args;
   if (isAudio) {
-    args = `-x --audio-format ${audioFormat} --audio-quality 0 --extractor-args "youtube:player_client=ios,web" --js-runtimes node ${cookies} -o "${outFile}" --no-playlist "${url}"`;
+    args = `-x --audio-format ${audioFormat} --audio-quality 0 --extractor-args "youtube:player_client=tv_embedded,ios,web" --js-runtimes node ${cookies} -o "${outFile}" --no-playlist "${url}"`;
   } else {
     const fmt = videoQuality === 'max'
       ? 'bestvideo+bestaudio/best'
       : `bestvideo[height<=${videoQuality}]+bestaudio/best[height<=${videoQuality}]/best`;
-    args = `-f "${fmt}" --merge-output-format mp4 --remux-video mp4 --extractor-args "youtube:player_client=ios,web" --js-runtimes node ${cookies} --print "%(height)sp %(format_id)s" -o "${outFile}" --no-playlist "${url}"`;
+    args = `-f "${fmt}" --merge-output-format mp4 --remux-video mp4 --extractor-args "youtube:player_client=tv_embedded,ios,web" --js-runtimes node ${cookies} --print "%(height)sp %(format_id)s" -o "${outFile}" --no-playlist "${url}"`;
   }
 
   console.log('[cmd] yt-dlp', args.slice(0, 120));
