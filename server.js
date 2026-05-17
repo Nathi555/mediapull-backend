@@ -127,7 +127,9 @@ app.post('/api/download', async (req, res) => {
   if (isAudio) {
     args = `-x --audio-format ${audioFormat} --audio-quality 0 --extractor-args "youtube:player_client=ios,web" --js-runtimes node ${cookies} -o "${outFile}" --no-playlist "${url}"`;
   } else {
-    const fmt = `bestvideo[height<=${videoQuality}][ext=mp4]+bestaudio[ext=m4a]/best[height<=${videoQuality}][ext=mp4]/best[height<=${videoQuality}]`;
+    const fmt = videoQuality === 'max'
+      ? 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best'
+      : `bestvideo[height<=${videoQuality}][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=${videoQuality}]+bestaudio/best[height<=${videoQuality}]`;
     args = `-f "${fmt}" --merge-output-format mp4 --extractor-args "youtube:player_client=ios,web" --js-runtimes node ${cookies} -o "${outFile}" --no-playlist "${url}"`;
   }
 
