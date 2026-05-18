@@ -72,12 +72,12 @@ app.post('/api/download', (req, res) => {
   }
 
   // web client + cookies = PO-Token wird von yt-dlp generiert (via node JS runtime aus config)
-  const cmd = `yt-dlp ${fmt} --extractor-args "youtube:player_client=web" ${cookies} --no-playlist --verbose -o "${outFile}" "${url}" 2>&1`;
+  const cmd = `yt-dlp ${fmt} --extractor-args "youtube:player_client=web" ${cookies} --no-playlist --print "%(format_id)s %(height)sp %(vcodec)s %(acodec)s" -o "${outFile}" "${url}" 2>&1`;
   console.log('[cmd]', cmd.slice(0, 150));
 
   exec(cmd, { timeout: 5*60*1000 }, (err, out) => {
     // Verbose output loggen (PO-Token Zeilen)
-    console.log('[yt-dlp full]\n' + (out||'').slice(-1500));
+    console.log('[yt-dlp out]\n' + (out||''));
 
     if (err) {
       const detail = (out||'').slice(-500);
