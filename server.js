@@ -54,7 +54,7 @@ app.post('/api/download', (req, res) => {
     ? '-x --audio-format mp3 --audio-quality 0'
     : videoQuality === 'max'
       ? '-f "bestvideo+bestaudio/best" --merge-output-format mp4'
-      : `-f "bestvideo[height<=${videoQuality}]+bestaudio/best[height<=${videoQuality}]/best" --merge-output-format mp4`;
+      : "-f best";
 
   // web client + cookies = PO-Token wird von yt-dlp generiert (via node JS runtime aus config)
   const cmd = `yt-dlp ${fmt} --extractor-args "youtube:player_client=web" ${cookies} --no-playlist --verbose -o "${outFile}" "${url}" 2>&1`;
@@ -62,11 +62,7 @@ app.post('/api/download', (req, res) => {
 
   exec(cmd, { timeout: 5*60*1000 }, (err, out) => {
     // Verbose output loggen (PO-Token Zeilen)
-    const lines = (out||'').split('\n').filter(l =>
-      l.includes('PO Token') || l.includes('po_token') || l.includes('visitor') ||
-      l.includes('Sign in') || l.includes('bot') || l.includes('ERROR') || l.includes('WARNING')
-    );
-    if (lines.length) console.log('[yt-dlp key lines]\n' + lines.join('\n'));
+    console.log('[yt-dlp full]\n' + (out||'').slice(-1500));
 
     if (err) {
       const detail = (out||'').slice(-500);
