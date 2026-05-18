@@ -44,7 +44,7 @@ app.get('/api/formats', (req, res) => {
   const url = req.query.url;
   if (!url) return res.status(400).json({ error: 'url fehlt' });
   const cookies = fs.existsSync(COOKIES_FILE) ? `--cookies "${COOKIES_FILE}"` : '';
-  exec(`yt-dlp --list-formats --extractor-args "youtube:player_client=ios" ${cookies} "${url}" 2>&1`, { timeout: 30000 }, (err, out) => {
+  exec(`yt-dlp --list-formats --extractor-args "youtube:player_client=web" ${cookies} "${url}" 2>&1`, { timeout: 30000 }, (err, out) => {
     res.setHeader('Content-Type', 'text/plain');
     res.send(out || err?.message);
   });
@@ -58,17 +58,21 @@ app.post('/api/download', (req, res) => {
   const id      = uuidv4();
   const ext     = isAudio ? 'mp3' : 'mp4';
   const outFile = path.join(TEMP_DIR, `${id}.${ext}`);
-  // ios/android clients don't support browser cookies - use without
-  const cookies = '';
+  const cookies = fs.existsSync(COOKIES_FILE) ? `--cookies "${COOKIES_FILE}"` : '';
 
-  const fmt = isAudio
-    ? '-x --audio-format mp3 --audio-quality 0'
-    : videoQuality === 'max'
-      ? '-f "bestvideo+bestaudio/best" --merge-output-format mp4'
-      : "-f best";
+  let fmt;
+  if (isAudio) {
+    fmt = '-x --audio-format mp3 --audio-quality 0';
+  } else {
+    const maxH = videoQuality === 'max' ? 9999 : parseInt(videoQuality);
+    if (maxH >= 1080) fmt = '-f "137+140/bestvideo[height<=1080]+bestaudio/22/18/best" --merge-output-format mp4';
+    else if (maxH >= 720) fmt = '-f "136+140/22/bestvideo[height<=720]+bestaudio/18/best" --merge-output-format mp4';
+    else if (maxH >= 480) fmt = '-f "135+140/bestvideo[height<=480]+bestaudio/18/best" --merge-output-format mp4';
+    else fmt = '-f "18/best"';
+  }
 
   // web client + cookies = PO-Token wird von yt-dlp generiert (via node JS runtime aus config)
-  const cmd = `yt-dlp ${fmt} --extractor-args "youtube:player_client=ios" ${cookies} --no-playlist --verbose -o "${outFile}" "${url}" 2>&1`;
+  const cmd = `yt-dlp ${fmt} --extractor-args "youtube:player_client=web" ${cookies} --no-playlist --verbose -o "${outFile}" "${url}" 2>&1`;
   console.log('[cmd]', cmd.slice(0, 150));
 
   exec(cmd, { timeout: 5*60*1000 }, (err, out) => {
