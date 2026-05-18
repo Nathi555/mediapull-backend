@@ -57,7 +57,7 @@ app.post('/api/download', (req, res) => {
       : "-f best";
 
   // web client + cookies = PO-Token wird von yt-dlp generiert (via node JS runtime aus config)
-  const cmd = `yt-dlp ${fmt} --extractor-args "youtube:player_client=web" ${cookies} --no-playlist --verbose -o "${outFile}" "${url}" 2>&1`;
+  const cmd = `yt-dlp ${fmt} --extractor-args "youtube:player_client=mweb,tv_embedded,ios" ${cookies} --no-playlist --verbose -o "${outFile}" "${url}" 2>&1`;
   console.log('[cmd]', cmd.slice(0, 150));
 
   exec(cmd, { timeout: 5*60*1000 }, (err, out) => {
