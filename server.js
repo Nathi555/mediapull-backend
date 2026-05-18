@@ -53,8 +53,8 @@ app.post('/api/download', (req, res) => {
   const fmt = isAudio
     ? '-x --audio-format mp3 --audio-quality 0'
     : videoQuality === 'max'
-      ? '-f "bestvideo*+bestaudio/b" --merge-output-format mp4'
-      : `-f "bestvideo*[height<=${videoQuality}]+bestaudio/b[height<=${videoQuality}]" --merge-output-format mp4`;
+      ? '-f "bestvideo+bestaudio/best" --merge-output-format mp4'
+      : `-f "bestvideo[height<=${videoQuality}]+bestaudio/best[height<=${videoQuality}]/best" --merge-output-format mp4`;
 
   // web client + cookies = PO-Token wird von yt-dlp generiert (via node JS runtime aus config)
   const cmd = `yt-dlp ${fmt} --extractor-args "youtube:player_client=web" ${cookies} --no-playlist --verbose -o "${outFile}" "${url}" 2>&1`;
