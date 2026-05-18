@@ -40,6 +40,16 @@ function send(res, file, mime, name) {
   s.on('error', () => { if (!res.headersSent) res.status(500).end(); });
 }
 
+app.get('/api/formats', (req, res) => {
+  const url = req.query.url;
+  if (!url) return res.status(400).json({ error: 'url fehlt' });
+  const cookies = fs.existsSync(COOKIES_FILE) ? `--cookies "${COOKIES_FILE}"` : '';
+  exec(`yt-dlp --list-formats --extractor-args "youtube:player_client=mweb,web,tv_embedded" ${cookies} "${url}" 2>&1`, { timeout: 30000 }, (err, out) => {
+    res.setHeader('Content-Type', 'text/plain');
+    res.send(out || err?.message);
+  });
+});
+
 app.post('/api/download', (req, res) => {
   const { url, downloadMode='auto', videoQuality='max' } = req.body;
   if (!url) return res.status(400).json({ status:'error', message:'Keine URL' });
